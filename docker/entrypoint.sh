@@ -15,6 +15,11 @@ mkdir -p /var/www/html/storage/framework/cache/data \
 chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
 
+# Create dummy .env if missing in container (Render provides env vars into the process)
+if [ ! -f /var/www/html/.env ]; then
+    touch /var/www/html/.env
+fi
+
 # Cache configuration, routes, and views for production performance
 php artisan config:cache || true
 php artisan route:cache || true

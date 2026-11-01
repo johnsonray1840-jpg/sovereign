@@ -60,6 +60,7 @@ test_write.php
 
 # Large archives and database dumps (do NOT commit to public Git)
 *.sql
+!public/install/database.sql
 *.zip
 *.tar.gz
 *.7z

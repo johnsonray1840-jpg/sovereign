@@ -1,4 +1,4 @@
-FROM php:8.2-fpm-alpine
+FROM php:8.3-fpm-alpine
 
 # Install system dependencies & PHP extensions required by Laravel
 RUN apk add --no-cache \
@@ -12,6 +12,7 @@ RUN apk add --no-cache \
     libzip-dev \
     icu-dev \
     oniguruma-dev \
+    gmp-dev \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
         pdo_mysql \
@@ -22,7 +23,11 @@ RUN apk add --no-cache \
         gd \
         zip \
         intl \
+        gmp \
         opcache
+
+# Copy custom PHP configuration
+COPY php.ini /usr/local/etc/php/conf.d/custom-php.ini
 
 # Configure PHP-FPM to log worker errors directly to stderr so Render logs capture them
 RUN echo "catch_workers_output = yes" >> /usr/local/etc/php-fpm.d/zz-docker.conf \

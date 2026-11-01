@@ -385,7 +385,7 @@ class OveriewController extends Controller
 
         // 2) APP_KEY + cipher sanity
         try {
-            $cipher = (string) config('app.cipher');
+            $cipher = strtolower((string) config('app.cipher'));
             $key = (string) config('app.key');
 
             $supported = ['aes-128-cbc', 'aes-256-cbc', 'aes-128-gcm', 'aes-256-gcm'];
