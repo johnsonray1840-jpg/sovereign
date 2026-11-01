@@ -5,7 +5,7 @@
 return [
     // Will be placed in .env later with corresponding keys
     'template' => env("TEMPLATE", 'bento'),
-    'app_name' => env("APP_NAME", 'lozand'),
+    'app_name' => env("APP_NAME", 'sovereignvaultcapital.ltd'),
     'favicon' => env("FAVICON", 'favicon.png'),
     'app_timezone' => env("APP_TIMEZONE", 'Europe/London'),
     'decimal_places' => env("DECIMAL_PLACES", 2),
@@ -23,11 +23,11 @@ return [
 
     'settings_defaults' => [
         // Core
-        'name' => 'lozand',
+        'name' => 'sovereignvaultcapital.ltd',
         'logo_square' => 'logo-square.png',
         'logo_rectangle' => 'logo-rectangle.png',
         'favicon' => 'favicon.png',
-        'email' => 'info@lozand.com',
+        'email' => 'info@sovereignvaultcapital.ltd',
         'timezone' => env("APP_TIMEZONE", 'Europe/London'),
 
 

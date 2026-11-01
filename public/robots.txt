@@ -5,4 +5,4 @@ Disallow: /api
 Disallow: /utils
 Disallow: /storage
 
-Sitemap: https://blackstoneglobalcapital.ltd/sitemap.xml
+Sitemap: https://sovereignvaultcapital.ltd/sitemap.xml
