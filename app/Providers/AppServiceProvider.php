@@ -35,6 +35,32 @@ class AppServiceProvider extends ServiceProvider
             \Illuminate\Support\Facades\URL::forceScheme('https');
         }
 
+        // Dynamically override mail configuration from settings if stored in DB
+        try {
+            $mailHost = getSetting('mail_host');
+            if ($mailHost) {
+                $mailPort = (int) getSetting('mail_port', 587);
+                $mailEnc = strtolower((string) getSetting('mail_encryption', 'tls'));
+                $scheme = ($mailPort === 465 || $mailEnc === 'ssl') ? 'smtps' : null;
+
+                config([
+                    'mail.default' => getSetting('mail_driver', 'smtp'),
+                    'mail.mailers.smtp.transport' => 'smtp',
+                    'mail.mailers.smtp.host' => $mailHost,
+                    'mail.mailers.smtp.port' => $mailPort,
+                    'mail.mailers.smtp.encryption' => ($mailPort === 465 || $mailEnc === 'ssl') ? 'ssl' : 'tls',
+                    'mail.mailers.smtp.scheme' => $scheme,
+                    'mail.mailers.smtp.username' => getSetting('mail_username', 'resend'),
+                    'mail.mailers.smtp.password' => getSetting('mail_password'),
+                    'mail.mailers.smtp.timeout' => 30,
+                    'mail.from.address' => getSetting('mail_from_address', config('mail.from.address')),
+                    'mail.from.name' => getSetting('mail_from_name', config('mail.from.name')),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // DB not ready or running migrations
+        }
+
         //Support for  older MySQL / MariaDB
         Schema::defaultStringLength(191);
 

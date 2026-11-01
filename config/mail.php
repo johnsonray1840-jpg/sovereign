@@ -39,12 +39,12 @@ return [
 
         'smtp' => [
             'transport' => 'smtp',
-            'scheme' => env('MAIL_SCHEME', (env('MAIL_PORT') == 465 || env('MAIL_ENCRYPTION') == 'ssl') ? 'smtps' : null),
+            'scheme' => env('MAIL_SCHEME', (env('MAIL_PORT') == 465 || strtolower((string)env('MAIL_ENCRYPTION')) === 'ssl') ? 'smtps' : null),
             'url' => env('MAIL_URL'),
-            'host' => env('MAIL_HOST', '127.0.0.1'),
-            'port' => env('MAIL_PORT', 2525),
-            'encryption' => env('MAIL_ENCRYPTION'),
-            'username' => env('MAIL_USERNAME'),
+            'host' => env('MAIL_HOST', 'smtp.resend.com'),
+            'port' => (int) env('MAIL_PORT', 587),
+            'encryption' => (env('MAIL_PORT') == 465 || strtolower((string)env('MAIL_ENCRYPTION')) === 'ssl') ? 'ssl' : (env('MAIL_PORT') == 587 ? 'tls' : env('MAIL_ENCRYPTION')),
+            'username' => env('MAIL_USERNAME', 'resend'),
             'password' => env('MAIL_PASSWORD'),
             'timeout' => 30,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),

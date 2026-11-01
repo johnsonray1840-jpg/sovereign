@@ -14,14 +14,14 @@ class EmailController extends Controller
         $template = config('site.template');
 
         $mail_config = [
-            'driver' => env('MAIL_MAILER', 'smtp'),
-            'host' => env('MAIL_HOST'),
-            'port' => env('MAIL_PORT'),
-            'username' => env('MAIL_USERNAME'),
-            'password' => env('MAIL_PASSWORD'),
-            'encryption' => env('MAIL_ENCRYPTION'),
-            'from_address' => env('MAIL_FROM_ADDRESS'),
-            'from_name' => env('MAIL_FROM_NAME'),
+            'driver' => getSetting('mail_driver', env('MAIL_MAILER', 'smtp')),
+            'host' => getSetting('mail_host', env('MAIL_HOST', 'smtp.resend.com')),
+            'port' => getSetting('mail_port', env('MAIL_PORT', 587)),
+            'username' => getSetting('mail_username', env('MAIL_USERNAME', 'resend')),
+            'password' => getSetting('mail_password', env('MAIL_PASSWORD')),
+            'encryption' => getSetting('mail_encryption', env('MAIL_ENCRYPTION', 'tls')),
+            'from_address' => getSetting('mail_from_address', env('MAIL_FROM_ADDRESS', 'support@sovereignvaultcapital.ltd')),
+            'from_name' => getSetting('mail_from_name', env('MAIL_FROM_NAME', 'Sovereign Vault Capital')),
         ];
 
         $notifications = json_decode(getSetting('email_notification', '[]'), true);
@@ -131,7 +131,22 @@ class EmailController extends Controller
             'notifications' => 'nullable|array',
         ]);
 
-        // Update Env
+        // Save email settings into DB so they persist across Docker containers
+        $mailSettings = [
+            'mail_driver' => $request->mail_driver,
+            'mail_host' => $request->mail_host,
+            'mail_port' => $request->mail_port,
+            'mail_username' => $request->mail_username,
+            'mail_password' => $request->mail_password,
+            'mail_encryption' => $request->mail_encryption,
+            'mail_from_address' => $request->mail_from_address,
+            'mail_from_name' => $request->mail_from_name,
+        ];
+        foreach ($mailSettings as $k => $v) {
+            updateSetting($k, $v);
+        }
+
+        // Also update local .env file if available
         updateEnv('MAIL_MAILER', $request->mail_driver);
         updateEnv('MAIL_HOST', $request->mail_host);
         updateEnv('MAIL_PORT', $request->mail_port);
