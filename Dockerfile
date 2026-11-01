@@ -12,8 +12,6 @@ RUN apk add --no-cache \
     libzip-dev \
     icu-dev \
     oniguruma-dev \
-    nodejs \
-    npm \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) \
         pdo_mysql \
@@ -41,10 +39,6 @@ COPY . .
 
 # Install PHP dependencies without dev dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction
-
-# Install frontend dependencies and build Vite assets
-RUN npm ci || npm install
-RUN npm run build
 
 # Set permissions for storage & bootstrap cache
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
