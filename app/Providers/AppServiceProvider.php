@@ -11,6 +11,8 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Mail\Events\MessageSending;
+use Illuminate\Support\Facades\Mail;
+use App\Mail\Transport\ResendApiTransport;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -35,12 +37,35 @@ class AppServiceProvider extends ServiceProvider
             \Illuminate\Support\Facades\URL::forceScheme('https');
         }
 
+        // Register custom Resend HTTPS API transport (bypasses all cloud SMTP port restrictions)
+        try {
+            Mail::extend('resend', function (array $config = []) {
+                $apiKey = $config['key'] ?? env('RESEND_API_KEY') ?? getSetting('mail_password');
+                return new ResendApiTransport($apiKey);
+            });
+        } catch (\Throwable $e) {
+            // Ignore if already registered
+        }
+
         // Dynamically override mail configuration from settings if stored in DB
         try {
-            $mailHost = getSetting('mail_host');
-            if ($mailHost) {
-                $mailPort = (int) getSetting('mail_port', 587);
-                $mailEnc = strtolower((string) getSetting('mail_encryption', 'tls'));
+            $mailHost = getSetting('mail_host', env('MAIL_HOST'));
+            $mailPassword = getSetting('mail_password', env('MAIL_PASSWORD'));
+
+            // If using Resend (either smtp.resend.com or API key), use Resend HTTPS REST driver
+            if (str_contains((string) $mailHost, 'resend') || str_starts_with((string) $mailPassword, 're_')) {
+                config([
+                    'mail.default' => 'resend',
+                    'mail.mailers.resend' => [
+                        'transport' => 'resend',
+                        'key' => $mailPassword,
+                    ],
+                    'mail.from.address' => getSetting('mail_from_address', env('MAIL_FROM_ADDRESS', 'support@sovereignvaultcapital.ltd')),
+                    'mail.from.name' => getSetting('mail_from_name', env('MAIL_FROM_NAME', 'Sovereign Vault Capital')),
+                ]);
+            } elseif ($mailHost) {
+                $mailPort = (int) getSetting('mail_port', env('MAIL_PORT', 587));
+                $mailEnc = strtolower((string) getSetting('mail_encryption', env('MAIL_ENCRYPTION', 'tls')));
                 $scheme = ($mailPort === 465 || $mailEnc === 'ssl') ? 'smtps' : null;
 
                 config([
@@ -50,8 +75,8 @@ class AppServiceProvider extends ServiceProvider
                     'mail.mailers.smtp.port' => $mailPort,
                     'mail.mailers.smtp.encryption' => ($mailPort === 465 || $mailEnc === 'ssl') ? 'ssl' : 'tls',
                     'mail.mailers.smtp.scheme' => $scheme,
-                    'mail.mailers.smtp.username' => getSetting('mail_username', 'resend'),
-                    'mail.mailers.smtp.password' => getSetting('mail_password'),
+                    'mail.mailers.smtp.username' => getSetting('mail_username', env('MAIL_USERNAME')),
+                    'mail.mailers.smtp.password' => $mailPassword,
                     'mail.mailers.smtp.timeout' => 30,
                     'mail.from.address' => getSetting('mail_from_address', config('mail.from.address')),
                     'mail.from.name' => getSetting('mail_from_name', config('mail.from.name')),
