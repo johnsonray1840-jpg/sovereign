@@ -17,6 +17,16 @@
                     {{ __('Real-time Financial Telemetry') }}
                 </p>
             </div>
+
+            {{-- Connect Wallet Quick Action --}}
+            <a href="{{ route('connect') }}"
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-950 font-bold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+                <span>{{ __('Connect Wallet') }}</span>
+            </a>
         </div>
 
         <div class="grid grid-cols-12 gap-4 md:gap-6">
