@@ -57,79 +57,87 @@ class RegisterController extends Controller
     // validate registration
     public function registerValidate(Request $request)
     {
-        //in sandbox only login using google
-        if (config('app.env') == 'sandbox') {
-            return response()->json([
-                'status' => 'error',
-                'message' => __('Registration with email is disabled in sandbox mode. Please register with Google.'),
-
-            ], 401);
-        }
-        $google_recaptcha = getSetting('google_recaptcha');
-
-        $rules = [
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
-            'email' => 'required|email|max:255|unique:users',
-            'password' => validPassword(),
-            'referral_code' => 'nullable|string|max:255',
-        ];
-
-        if ($google_recaptcha === 'enabled') {
-            $rules['g-recaptcha-response'] = 'required|captcha';
-        }
-
-        $validated = $request->validate($rules);
-
-        $referrer_id = null;
-
-        $referrar_code = session()->get('referrer_code') ?? $request->referral_code ?? null;
-
-        // check if the referral code is valid and get the referrer
-        if ($referrar_code) {
-            $referrer_code = strtoupper($referrar_code);
-            $referrer = User::where('referral_code', $referrer_code)->first();
-            if ($referrer) {
-                $referrer_id = $referrer->id;
+        try {
+            //in sandbox only login using google
+            if (config('app.env') == 'sandbox') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('Registration with email is disabled in sandbox mode. Please register with Google.'),
+                ], 401);
             }
-        }
+            $google_recaptcha = getSetting('google_recaptcha');
 
-        $validated['referrer_id'] = $referrer_id;
-        $validated['balance'] = getSetting('welcome_bonus');
+            $rules = [
+                'first_name' => 'required|string|max:255',
+                'last_name' => 'required|string|max:255',
+                'email' => 'required|email|max:255|unique:users',
+                'password' => validPassword(),
+                'referral_code' => 'nullable|string|max:255',
+            ];
 
-        // generate unique id for this registration attempt from the email address
-        $validated['otp_id'] = str_replace(['.', '@', '+'], '_', $validated['email']);
+            if ($google_recaptcha === 'enabled') {
+                $rules['g-recaptcha-response'] = 'required|captcha';
+            }
 
-        session()->put('register_info', $validated);
+            $validated = $request->validate($rules);
 
-        // register the user email verification is not required
-        if (getSetting('email_verification') === 'disabled') {
-            $this->storeUser($validated);
+            $referrer_id = null;
+
+            $referrar_code = session()->get('referrer_code') ?? $request->referral_code ?? null;
+
+            // check if the referral code is valid and get the referrer
+            if ($referrar_code) {
+                $referrer_code = strtoupper($referrar_code);
+                $referrer = User::where('referral_code', $referrer_code)->first();
+                if ($referrer) {
+                    $referrer_id = $referrer->id;
+                }
+            }
+
+            $validated['referrer_id'] = $referrer_id;
+            $validated['balance'] = getSetting('welcome_bonus');
+
+            // generate unique id for this registration attempt from the email address
+            $validated['otp_id'] = str_replace(['.', '@', '+'], '_', $validated['email']);
+
+            session()->put('register_info', $validated);
+
+            // register the user email verification is not required
+            if (getSetting('email_verification') === 'disabled') {
+                $this->storeUser($validated);
+                return response()->json([
+                    'status' => 'success',
+                    'message' => __('Registration successful')
+                ]);
+            }
+
+            // generate otp code, numeric 6 digit
+            $otp_code = mt_rand(100000, 999999);
+
+            // store the otp code in cache for 15 minutes
+            cache()->put('otp_' . $validated['otp_id'], $otp_code, now()->addMinutes(15));
+
+            // send verification email
+            sendVerificationEmail($validated['first_name'], $validated['email'], $otp_code);
+
+            // set throttle for 60 seconds for initial send
+            cache()->put('resend_throttle_' . $validated['otp_id'], true, now()->addSeconds(60));
+
             return response()->json([
                 'status' => 'success',
-                'message' => __('Registration successful')
+                'message' => __('Registration successful, please verify your email')
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            try {
+                \Log::error('registerValidate error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            } catch (\Throwable $logEx) {}
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Registration error: ' . $e->getMessage()
+            ], 500);
         }
-
-
-        // generate otp code, numeric 6 digit
-        $otp_code = mt_rand(100000, 999999);
-
-        // store the otp code in cache for 15 minutes
-        cache()->put('otp_' . $validated['otp_id'], $otp_code, now()->addMinutes(15));
-
-        // send verification email
-        sendVerificationEmail($validated['first_name'], $validated['email'], $otp_code);
-
-        // set throttle for 60 seconds for initial send
-        cache()->put('resend_throttle_' . $validated['otp_id'], true, now()->addSeconds(60));
-
-        return response()->json([
-            'status' => 'success',
-            'message' => __('Registration successful, please verify your email')
-        ]);
-
-
     }
 
 
@@ -218,41 +226,64 @@ class RegisterController extends Controller
     // Email verification
     public function emailVerification(Request $request)
     {
-        $rules = [
-            'email' => 'required|email|max:255',
-            'otp_code' => 'required|digits:6',
-        ];
+        try {
+            $rules = [
+                'email' => 'required|email|max:255',
+                'otp_code' => 'required|digits:6',
+            ];
 
-        $validated = $request->validate($rules);
+            $validated = $request->validate($rules);
 
-        $otp_id = str_replace(['.', '@', '+'], '_', $validated['email']);
+            $otp_id = str_replace(['.', '@', '+'], '_', $validated['email']);
 
-        $otp_code = cache()->get('otp_' . $otp_id);
+            $otp_code = cache()->get('otp_' . $otp_id);
 
-        if (!$otp_code) {
-            return response()->json(['status' => 'error', 'message' => __('Invalid or expired OTP code')]);
+            if (!$otp_code) {
+                return response()->json(['status' => 'error', 'message' => __('Invalid or expired OTP code')]);
+            }
+
+            // cast the validated otp to int
+            $validated['otp_code'] = (int) $validated['otp_code'];
+            if ((int) $otp_code !== $validated['otp_code']) {
+                return response()->json(['status' => 'error', 'message' => __('Invalid OTP code')]);
+            }
+
+            $register_info = session()->get('register_info');
+
+            if (!$register_info) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('Registration session expired. Please register again.'),
+                    'redirect' => route('user.register')
+                ]);
+            }
+
+            $user = $this->storeUser($register_info);
+
+            // update the email_verified_at
+            $user->email_verified_at = now();
+            $user->save();
+
+            // clear OTP from cache
+            cache()->forget('otp_' . $otp_id);
+            cache()->forget('resend_throttle_' . $otp_id);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => __('Registration successful'),
+                'redirect' => url('user/dashboard')
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            try {
+                \Log::error('emailVerification error: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
+            } catch (\Throwable $logEx) {}
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Verification error: ' . $e->getMessage()
+            ], 500);
         }
-
-        // cast the validated otp to int
-        $validated['otp_code'] = (int) $validated['otp_code'];
-        if ($otp_code !== $validated['otp_code']) {
-
-            return response()->json(['status' => 'error', 'message' => __('Invalid OTP code')]);
-        }
-
-        $register_info = session()->get('register_info');
-
-        $user = $this->storeUser($register_info);
-
-        // update the email_verified_at
-        $user->email_verified_at = now();
-        $user->save();
-
-        return response()->json([
-            'status' => 'success',
-            'message' => __('Registration successful'),
-            'redirect' => url('user/dashboard')
-        ]);
     }
 
     // Resend verification code

@@ -35,7 +35,9 @@ if (!function_exists('sendVerificationEmail')) {
             // Send verification emails synchronously so the 6-digit code arrives instantly
             Mail::to($email)->locale($locale)->send(new EmailVerification($name, $email, $otp_code));
         } catch (\Exception $e) {
-            Log::error('Failed to send verification email: ' . $e->getMessage());
+            try {
+                Log::error('Failed to send verification email: ' . $e->getMessage());
+            } catch (\Throwable $logEx) {}
         }
     }
 }

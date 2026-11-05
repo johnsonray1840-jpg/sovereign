@@ -45,9 +45,10 @@ COPY . .
 # Install PHP dependencies without dev dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# Set permissions for storage & bootstrap cache
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
-    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+# Remove any pre-existing log files and set permissions for storage & bootstrap cache
+RUN rm -rf /var/www/html/storage/logs/*.log \
+    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
+    && chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
 
 # Copy Nginx and entrypoint configs
 COPY docker/nginx.conf /etc/nginx/nginx.conf

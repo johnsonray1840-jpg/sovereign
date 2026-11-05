@@ -64,11 +64,15 @@ class ResendApiTransport extends AbstractTransport
 
         if ($response->failed()) {
             $errorBody = $response->body();
-            Log::error('Resend API Dispatch Error: ' . $errorBody);
+            try {
+                Log::error('Resend API Dispatch Error: ' . $errorBody);
+            } catch (\Throwable $e) {}
             throw new Exception('Resend API Error: ' . $errorBody);
         }
 
-        Log::info('Resend API email delivered successfully: ' . $response->body());
+        try {
+            Log::info('Resend API email delivered successfully: ' . $response->body());
+        } catch (\Throwable $e) {}
     }
 
     public function __toString(): string
@@ -76,3 +80,4 @@ class ResendApiTransport extends AbstractTransport
         return 'resend-api';
     }
 }
+

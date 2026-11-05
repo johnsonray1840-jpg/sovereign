@@ -12,6 +12,7 @@ mkdir -p /var/www/html/storage/framework/cache/data \
          /var/www/html/storage/framework/views \
          /var/www/html/storage/logs \
          /var/www/html/storage/untranslated
+rm -rf /var/www/html/storage/logs/*.log || true
 chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 chmod -R 777 /var/www/html/storage /var/www/html/bootstrap/cache
 
