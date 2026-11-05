@@ -35,5 +35,8 @@ sed -i "s/\${PORT}/$PORT/g" /etc/nginx/nginx.conf
 # Start PHP-FPM in background (logging to stderr so Render logs capture PHP errors)
 php-fpm -D -R
 
+# Start a persistent queue worker in the background for asynchronous jobs
+(while true; do php /var/www/html/artisan queue:work --stop-when-empty --tries=3 --timeout=60 || true; sleep 5; done) &
+
 # Start Nginx in foreground
 exec nginx -g "daemon off;"

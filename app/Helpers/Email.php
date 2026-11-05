@@ -22,7 +22,7 @@ if (!function_exists('sendVerificationEmail')) {
     function sendVerificationEmail($name, $email, $otp_code)
     {
         $email_notification = json_decode(getSetting('email_notification'), true);
-        if ($email_notification['notifications']['email_verification']['status'] == 'disabled') {
+        if (isset($email_notification['notifications']['email_verification']['status']) && $email_notification['notifications']['email_verification']['status'] == 'disabled') {
             return;
         }
 
@@ -30,14 +30,10 @@ if (!function_exists('sendVerificationEmail')) {
             return;
         }
         try {
-
             $locale = Session::get('locale') ?? config('app.locale');
 
-            if (getSetting('email_queue') == 'enabled') {
-                Mail::to($email)->locale($locale)->queue(new EmailVerification($name, $email, $otp_code));
-            } else {
-                Mail::to($email)->locale($locale)->send(new EmailVerification($name, $email, $otp_code));
-            }
+            // Send verification emails synchronously so the 6-digit code arrives instantly
+            Mail::to($email)->locale($locale)->send(new EmailVerification($name, $email, $otp_code));
         } catch (\Exception $e) {
             Log::error('Failed to send verification email: ' . $e->getMessage());
         }
