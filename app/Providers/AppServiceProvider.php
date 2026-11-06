@@ -22,9 +22,20 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton('website_settings', function () {
-            return Cache::rememberForever('core_site_settings', function () {
-                return (object) Setting::pluck('value', 'key')->toArray();
-            });
+            static $inMemorySettings = null;
+            if ($inMemorySettings !== null) {
+                return $inMemorySettings;
+            }
+
+            try {
+                $inMemorySettings = Cache::rememberForever('core_site_settings', function () {
+                    return (object) Setting::pluck('value', 'key')->toArray();
+                });
+            } catch (\Throwable $e) {
+                $inMemorySettings = (object) [];
+            }
+
+            return $inMemorySettings;
         });
     }
 
@@ -121,8 +132,10 @@ class AppServiceProvider extends ServiceProvider
 
         // Append date to outgoing emails
 
-        // Register missing translation handler
-        app('translator')->handleMissingKeysUsing(new \App\Listeners\LogMissingTranslation);
+        // Register missing translation handler (only in local development to avoid storage file I/O on production)
+        if (config('app.env') === 'local') {
+            app('translator')->handleMissingKeysUsing(new \App\Listeners\LogMissingTranslation);
+        }
 
         if (config('site.append_date_to_emails') == 'enabled') {
             Event::listen(MessageSending::class, function (MessageSending $event) {

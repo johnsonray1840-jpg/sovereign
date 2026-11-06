@@ -452,10 +452,13 @@
 
     {{-- MARKET TICKER --}}
     @if (!empty($marketStats) && count($marketStats) > 0)
+        @php
+            $displayStats = array_slice($marketStats, 0, 25);
+        @endphp
         <div class="bg-black/20 border-y border-white/5 backdrop-blur-sm relative overflow-hidden h-14 flex items-center">
             <div class="ticker-wrap-reverse flex items-center gap-8 whitespace-nowrap min-w-full">
-                @for ($i = 0; $i < 4; $i++)
-                    @foreach ($marketStats as $stat)
+                @for ($i = 0; $i < 2; $i++)
+                    @foreach ($displayStats as $stat)
                         @php
                             $changePct = (float) ($stat['change_1d_percentage'] ?? 0);
                             $isUp = $changePct >= 0;
@@ -465,6 +468,7 @@
                             @if (!empty($stat['public_png_logo_url']))
                                 <img src="{{ $stat['public_png_logo_url'] }}"
                                     class="w-5 h-5 rounded-full object-contain bg-white/10 p-0.5"
+                                    loading="lazy" decoding="async"
                                     onerror="this.style.display='none'">
                             @endif
                             <div class="flex items-center gap-2">

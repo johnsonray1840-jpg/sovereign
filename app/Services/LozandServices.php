@@ -35,7 +35,7 @@ class LozandServices
         }
 
         try {
-            $response = Http::timeout(30)->withHeaders([
+            $response = Http::timeout(3)->withHeaders([
                 'x-api-key' => $this->api_key,
             ])->get($this->base_url . '/stocks');
 
@@ -45,7 +45,7 @@ class LozandServices
                     'data' => $response->json()['data'],
                     'code' => $response->status()
                 ];
-                Cache::put('market_stocks', $data, now()->addMinutes(2));
+                Cache::put('market_stocks', $data, now()->addMinutes(10));
                 return $data;
             }
 
@@ -86,7 +86,7 @@ class LozandServices
         }
 
         try {
-            $response = Http::timeout(30)
+            $response = Http::timeout(3)
                 ->withHeaders([
                     'x-api-key' => $this->api_key,
                 ])
@@ -98,7 +98,7 @@ class LozandServices
                     'data' => $response->json()['data'],
                     'code' => $response->status()
                 ];
-                Cache::put($cacheKey, $data, now()->addMinutes(5));
+                Cache::put($cacheKey, $data, now()->addMinutes(10));
                 return $data;
             }
 
@@ -400,7 +400,7 @@ class LozandServices
         }
 
         try {
-            $response = Http::timeout(30)
+            $response = Http::timeout(3)
                 ->withHeaders([
                     'x-api-key' => $this->api_key,
                 ])
@@ -412,7 +412,7 @@ class LozandServices
                     'data' => $response->json()['data'],
                     'code' => $response->status()
                 ];
-                Cache::put($cacheKey, $data, now()->addSeconds(6));
+                Cache::put($cacheKey, $data, now()->addMinutes(2));
                 return $data;
             }
 
