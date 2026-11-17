@@ -453,9 +453,10 @@
                             @if ($payment_method->type == 'crypto')
                                 <!-- Transaction ID -->
                                 <div>
-                                    <label
+                                    <label for="transaction_hash_input"
                                         class="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">{{ __('Transaction ID / Hash') }}</label>
-                                    <input type="text" name="transaction_hash" required
+                                    <input type="text" name="transaction_hash" id="transaction_hash_input"
+                                        autocomplete="off" spellcheck="false" required
                                         class="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-accent-primary focus:ring-1 focus:ring-accent-primary transition-all placeholder-white/20"
                                         placeholder="{{ __('Enter transaction ID') }}">
                                 </div>
@@ -468,10 +469,11 @@
                                     class="block text-xs font-bold text-text-secondary uppercase tracking-wider mb-2">{{ __('Payment Proof') }}</label>
                                 <div class="relative group">
                                     <input type="file" name="proof" id="proof_file"
+                                        onchange="window.handleProofFileSelect(this)"
                                         class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                                         accept="image/*" required>
-                                    <label for="proof_file"
-                                        class="relative flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:border-accent-primary/50 hover:bg-white/5 transition-all overflow-hidden">
+                                    <label for="proof_file" id="proof_dropzone"
+                                        class="relative flex flex-col items-center justify-center w-full h-44 border-2 border-dashed border-white/10 rounded-xl cursor-pointer hover:border-accent-primary/50 hover:bg-white/5 transition-all overflow-hidden">
 
                                         {{-- Default State --}}
                                         <div class="flex flex-col items-center justify-center pt-5 pb-6 transition-opacity duration-300"
@@ -486,22 +488,22 @@
                                                     class="font-bold text-white">{{ __('Click to upload') }}</span>
                                             </p>
                                             <p class="text-[10px] text-text-secondary/60">
-                                                {{ __('PNG, JPG (MAX. 5MB)') }}</p>
+                                                {{ __('PNG, JPG, WEBP (MAX. 10MB)') }}</p>
                                         </div>
 
                                         {{-- Preview State --}}
-                                        <div id="file-preview-container" class="absolute inset-0 hidden">
+                                        <div id="file-preview-container"
+                                            class="hidden absolute inset-0 flex-col items-center justify-center p-2 bg-black/50 pointer-events-none">
                                             <img id="file-preview-image" src="" alt="Preview"
-                                                class="w-full h-full object-cover opacity-60">
-                                            <div
-                                                class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <p
-                                                    class="text-white text-xs font-bold bg-black/50 px-3 py-1 rounded-full backdrop-blur-sm border border-white/20">
-                                                    {{ __('Click to change') }}</p>
-                                            </div>
+                                                class="max-h-28 w-auto max-w-full object-contain rounded-lg shadow-md border border-white/15">
+                                            <span
+                                                class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold">
+                                                &#10003; {{ __('Image Selected — Click to change') }}
+                                            </span>
                                         </div>
                                     </label>
-                                    <div id="file-name" class="mt-2 text-xs text-accent-primary text-center hidden">
+                                    <div id="file-name"
+                                        class="hidden mt-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-medium text-center break-all">
                                     </div>
                                 </div>
                             </div>
@@ -528,23 +530,80 @@
 
 @section('scripts')
     <script>
-        $(document).ready(function() {
-            // File Upload Preview Text
-            // File Upload Preview Logic
-            $('#proof_file').change(function(e) {
-                var file = e.target.files[0];
-                if (file) {
-                    var reader = new FileReader();
-                    reader.onload = function(e) {
-                        $('#file-preview-image').attr('src', e.target.result);
-                        $('#file-preview-container').removeClass('hidden');
-                        $('#upload-placeholder').addClass(
-                            'opacity-0'); // Hide placeholder visually but keep layout
-                    }
-                    reader.readAsDataURL(file);
+        window.handleProofFileSelect = function(input) {
+            var file = input && input.files && input.files[0];
+            var previewContainer = document.getElementById('file-preview-container');
+            var previewImage = document.getElementById('file-preview-image');
+            var placeholder = document.getElementById('upload-placeholder');
+            var fileNameEl = document.getElementById('file-name');
+            var dropzone = document.getElementById('proof_dropzone');
 
-                    $('#file-name').text(file.name).removeClass('hidden');
+            if (!file) {
+                if (previewContainer) {
+                    previewContainer.classList.add('hidden');
+                    previewContainer.style.display = 'none';
                 }
+                if (previewImage) {
+                    previewImage.src = '';
+                }
+                if (placeholder) {
+                    placeholder.style.display = 'flex';
+                    placeholder.classList.remove('opacity-0');
+                }
+                if (fileNameEl) {
+                    fileNameEl.textContent = '';
+                    fileNameEl.classList.add('hidden');
+                    fileNameEl.style.display = 'none';
+                }
+                if (dropzone) {
+                    dropzone.classList.remove('border-emerald-500/60', 'bg-emerald-500/5');
+                }
+                return;
+            }
+
+            if (placeholder) {
+                placeholder.style.display = 'none';
+            }
+            if (previewContainer) {
+                previewContainer.classList.remove('hidden');
+                previewContainer.style.display = 'flex';
+            }
+            if (dropzone) {
+                dropzone.classList.add('border-emerald-500/60', 'bg-emerald-500/5');
+            }
+            if (fileNameEl) {
+                var sizeLabel = file.size >= 1048576
+                    ? (file.size / 1048576).toFixed(2) + ' MB'
+                    : Math.max(1, Math.round(file.size / 1024)) + ' KB';
+                fileNameEl.textContent = 'Selected: ' + file.name + ' (' + sizeLabel + ')';
+                fileNameEl.classList.remove('hidden');
+                fileNameEl.style.display = 'block';
+            }
+
+            if (previewImage) {
+                try {
+                    if (window.URL && URL.createObjectURL) {
+                        var objectUrl = URL.createObjectURL(file);
+                        previewImage.onload = function() {
+                            try { URL.revokeObjectURL(objectUrl); } catch (e) {}
+                        };
+                        previewImage.src = objectUrl;
+                        return;
+                    }
+                } catch (e) {}
+
+                var reader = new FileReader();
+                reader.onload = function(ev) {
+                    previewImage.src = ev.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+
+        $(document).ready(function() {
+            // Delegated listener fallback for file input changes
+            $(document).on('change', '#proof_file', function() {
+                window.handleProofFileSelect(this);
             });
 
 
@@ -603,7 +662,8 @@
                 });
             });
 
-            // Background Status Update
+            @if (isset($deposit) && $deposit && $payment_method->class === 'automatic')
+            // Background Status Update (automatic gateways with an existing deposit only)
             let statusInterval;
 
             function checkStatusUpdate() {
@@ -622,8 +682,10 @@
                     // Update Status Section
                     const newStatusHtml = $newStatusSection.html();
                     const newStatus = $newStatusSection.data('status');
+                    const statusChanged = newStatus && newStatus !== currentStatus;
 
-                    if (newStatusHtml && $('#status-section').html().trim() !== newStatusHtml.trim()) {
+                    // If the deposit status changed (e.g. approved/rejected by admin)
+                    if (statusChanged) {
                         $('#status-section').html(newStatusHtml);
                         $('#status-section').data('status', newStatus); // Sync status
                         initCountdown(); // Re-initialize if timer is present
@@ -631,19 +693,16 @@
                         // Stop polling if reached final status
                         if (newStatus !== 'pending' && newStatus !== 'partial_payment') {
                             clearInterval(statusInterval);
+                            // Hide the action form when no longer pending
+                            $('#action-form-section').addClass('hidden');
                         }
-                    }
-
-                    // Update Action Form Section
-                    const newFormHtml = $newData.find('#action-form-section').html();
-                    if (newFormHtml && $('#action-form-section').html().trim() !== newFormHtml.trim()) {
-                        $('#action-form-section').html(newFormHtml);
                     }
                 });
             }
 
             // Check every 5 seconds
             statusInterval = setInterval(checkStatusUpdate, 5000);
+            @endif
 
             // Countdown Timer Logic
             let timerInterval;

@@ -114,47 +114,64 @@ if (!function_exists('recordNotificationMessage')) {
 
 // convert 
 if (!function_exists('rateConverter')) {
-    function rateConverter($amount, $from_currency, $to_currency, $precision)
+    function rateConverter($amount, $from_currency, $to_currency, $precision = 'deposit')
     {
+        $from = strtoupper(trim((string) $from_currency));
+        $to = strtoupper(trim((string) $to_currency));
+
+        // 1. Same currency shortcut - no external network call needed
+        if ($from === $to || empty($from) || empty($to)) {
+            return [
+                'converted_amount' => (float) $amount,
+                'exchange_rate'    => 1.0,
+                'to_currency'      => $to ?: $from,
+                'from_currency'    => $from ?: $to,
+                'status'           => 'success',
+            ];
+        }
+
         try {
-            $url = "http://lozand.com/api/v1/convert";
+            $url = "https://lozand.com/api/v1/convert";
             $params = [
-                'from_currency' => $from_currency,
-                'to_currency' => $to_currency,
-                'amount' => $amount,
-                'precision' => $precision
+                'from_currency' => $from,
+                'to_currency'   => $to,
+                'amount'        => $amount,
+                'precision'     => $precision
             ];
 
             $license_key = safeDecrypt(config('site.product_key'));
 
             $headers = [
                 'x-license-key' => $license_key,
-                'x-domain' => request()->getHost(),
+                'x-domain'      => request()->getHost(),
             ];
 
-            $response = Http::withHeaders($headers)->get($url, $params);
+            $response = Http::timeout(5)->withHeaders($headers)->get($url, $params);
 
-            if ($response->failed()) {
-                return [];
+            if ($response->successful()) {
+                $response_data = $response->json()['data'] ?? [];
+                if (isset($response_data['converted_amount']) && isset($response_data['exchange_rate'])) {
+                    return [
+                        'converted_amount' => (float) $response_data['converted_amount'],
+                        'exchange_rate'    => (float) $response_data['exchange_rate'],
+                        'to_currency'      => $to,
+                        'from_currency'    => $from,
+                        'status'           => 'success',
+                    ];
+                }
             }
-
-            $response_data = $response->json()['data'];
-
-            $data = [
-                'converted_amount' => $response_data['converted_amount'],
-                'exchange_rate' => $response_data['exchange_rate'],
-                'to_currency' => $to_currency,
-                'from_currency' => $from_currency,
-                'status' => 'success',
-            ];
-
-            return $data;
-        } catch (\Exception $e) {
-            return [];
+        } catch (\Throwable $e) {
+            \Log::warning("rateConverter error: " . $e->getMessage());
         }
 
-
-
+        // 2. Safe fallback when external conversion API is unreachable
+        return [
+            'converted_amount' => (float) $amount,
+            'exchange_rate'    => 1.0,
+            'to_currency'      => $to,
+            'from_currency'    => $from,
+            'status'           => 'fallback',
+        ];
     }
 }
 

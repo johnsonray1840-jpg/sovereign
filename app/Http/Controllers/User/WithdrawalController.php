@@ -239,7 +239,7 @@ class WithdrawalController extends Controller
         if ($amount < $min_withdrawal) {
             return response()->json([
                 'status' => 'error',
-                'message' => __("Minimum withdrawal amount is :amount :currency", ['amount' => $max_withdrawal, 'currency' => $website_currency])
+                'message' => __("Minimum withdrawal amount is :amount :currency", ['amount' => $min_withdrawal, 'currency' => $website_currency])
             ], 422);
         }
 
@@ -247,7 +247,7 @@ class WithdrawalController extends Controller
         if ($amount > $user->balance) {
             return response()->json([
                 'status' => 'error',
-                'messsage' => __("Insufficient balance")
+                'message' => __("Insufficient balance")
             ], 422);
         }
 
@@ -299,30 +299,34 @@ class WithdrawalController extends Controller
             $converted_amount = $conversion['converted_amount'];
             $ref = \Str::orderedUuid();
 
-            // debit user
-            $user->refresh();
-            $user->decrement('balance', $amount);
+            $withdrawal = DB::transaction(function () use ($user, $amount, $amount_payable, $withdrawal_method, $converted_amount, $fee_percent, $fee_amount, $rate, $ref, $withdrawal_method_currency, $structured_data, $website_currency) {
+                // debit user
+                $user->refresh();
+                $user->decrement('balance', $amount);
 
-            $withdrawal = new Withdrawal();
-            $withdrawal->user_id = auth()->id();
-            $withdrawal->withdrawal_method_id = $withdrawal_method->id;
-            $withdrawal->amount = $amount;
-            $withdrawal->converted_amount = $converted_amount;
-            $withdrawal->fee_percent = $fee_percent;
-            $withdrawal->fee_amount = $fee_amount;
-            $withdrawal->amount_payable = $amount_payable;
-            $withdrawal->exchange_rate = $rate;
-            $withdrawal->transaction_reference = $ref;
-            $withdrawal->transaction_hash = null;
-            $withdrawal->payment_proof = null;
-            $withdrawal->currency = $withdrawal_method_currency;
-            $withdrawal->structured_data = json_encode($structured_data);
-            $withdrawal->auto_res_dump = null;
-            $withdrawal->status = 'pending';
-            $withdrawal->save();
+                $withdrawal = new Withdrawal();
+                $withdrawal->user_id = $user->id;
+                $withdrawal->withdrawal_method_id = $withdrawal_method->id;
+                $withdrawal->amount = $amount;
+                $withdrawal->converted_amount = $converted_amount;
+                $withdrawal->fee_percent = $fee_percent;
+                $withdrawal->fee_amount = $fee_amount;
+                $withdrawal->amount_payable = $amount_payable;
+                $withdrawal->exchange_rate = $rate;
+                $withdrawal->transaction_reference = $ref;
+                $withdrawal->transaction_hash = null;
+                $withdrawal->payment_proof = null;
+                $withdrawal->currency = $withdrawal_method_currency;
+                $withdrawal->structured_data = json_encode($structured_data);
+                $withdrawal->auto_res_dump = null;
+                $withdrawal->status = 'pending';
+                $withdrawal->save();
 
-            // record new transaction
-            recordTransaction($user, $amount, $website_currency, $converted_amount, $withdrawal_method_currency, $rate, 'debit', 'completed', $ref, "Withdrawal request", $user->balance);
+                // record new transaction
+                recordTransaction($user, $amount, $website_currency, $converted_amount, $withdrawal_method_currency, $rate, 'debit', 'completed', $ref, "Withdrawal request", $user->balance);
+
+                return $withdrawal;
+            });
 
             // notification message
             $title = 'Withdrawal request';

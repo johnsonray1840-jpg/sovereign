@@ -288,72 +288,72 @@ class DepositController extends Controller
             'status' => 'required|in:pending,partial_payment,completed,failed'
         ]);
 
+        return DB::transaction(function () use ($request, $id) {
+            $deposit = Deposit::where('id', $id)->lockForUpdate()->firstOrFail();
 
+            // guard rails
+            $allowed = ['pending', 'partial_payment', 'failed'];
+            if (!in_array($deposit->status, $allowed)) {
+                return response()->json(['status' => 'error', 'message' => __('Deposit Already processed')], 400);
+            }
 
-        $deposit = Deposit::findOrFail($id);
+            // current status cannot be same as old status
+            if ($deposit->status === $request->status) {
+                return response()->json(['status' => 'error', 'message' => __('Deposit status cannot be same as old status')], 400);
+            }
 
-        // guard rails
-        $allowed = ['pending', 'partial_payment', 'failed'];
-        if (!in_array($deposit->status, $allowed)) {
-            return response()->json(['status' => 'error', 'message' => __('Deposit Already processed')], 400);
-        }
+            $gatewayName = $deposit->paymentMethod ? $deposit->paymentMethod->name : __('Payment Gateway');
+            $status = $request->status;
 
-        // current status cannot be same as old status
-        if ($deposit->status === $request->status) {
-            return response()->json(['status' => 'error', 'message' => __('Deposit status cannot be same as old status')], 400);
-        }
+            if ($status === 'completed') {
+                $user = $deposit->user;
 
-        $status = $request->status;
-        if ($status === 'completed') {
-            $user = $deposit->user;
+                // Record deposit update
+                $deposit->status = 'completed';
+                $deposit->save();
 
-            // Record deposit update
-            $deposit->status = 'completed';
+                // Credit user balance safely
+                $user->refresh();
+                $new_balance = $user->balance + $deposit->amount;
+                $user->balance = $new_balance;
+                $user->save();
+
+                // Record transaction
+                $reference = \Str::random(12);
+                $description = "Deposit via " . $gatewayName;
+                recordTransaction($user, $deposit->amount, getSetting('currency'), $deposit->converted_amount, $deposit->currency, $deposit->exchange_rate, 'credit', $deposit->status, $reference, $description, $new_balance);
+
+                // send deposit email
+                $custom_subject = "Deposit Completed";
+                $custom_message = "Your deposit has been approved and completed. Find the details below.";
+                sendDepositEmail($custom_subject, $custom_message, $deposit);
+
+                // Record notification
+                $title = "Deposit Completed";
+                $body = "Deposit via " . $gatewayName . " has been completed";
+                recordNotificationMessage($user, $title, $body);
+
+                return response()->json(['status' => 'success', 'message' => __('Payment processed successfully')], 200);
+            }
+
+            $deposit->status = $request->status;
             $deposit->save();
 
-            // Credit user balance
-            $user->refresh();
-            $new_balance = $user->balance + $deposit->amount;
-            $user->balance = $new_balance;
-            $user->save();
-
-            // Record transaction
-            $reference = \Str::random(12);
-            $description = "Deposit via " . $deposit->paymentMethod->name;
-            recordTransaction($user, $deposit->amount, getSetting('currency'), $deposit->converted_amount, $deposit->currency, $deposit->exchange_rate, 'credit', $deposit->status, $reference, $description, $new_balance);
-
             // send deposit email
-            $custom_subject = "Deposit Completed";
-            $custom_message = "Deposit has been completed find the details below.";
+            $custom_subject = "Deposit " . ucfirst($request->status);
+            $custom_message = "Your deposit status has been updated to " . $request->status . ".";
             sendDepositEmail($custom_subject, $custom_message, $deposit);
 
             // Record notification
-            $title = "Deposit Completed";
-            $body = "Deposit via Nowpayments.io has been completed";
-            recordNotificationMessage($user, $title, $body);
+            $title = "Deposit " . ucfirst($request->status);
+            $body = "Deposit via " . $gatewayName . " has been " . $request->status;
+            recordNotificationMessage($deposit->user, $title, $body);
 
-            return response()->json(['status' => 'success', 'message' => __('Payment processed successfully')], 200);
-        }
-
-
-
-        $deposit->status = $request->status;
-        $deposit->save();
-
-        // send deposit email
-        $custom_subject = "Deposit " . ucfirst($request->status);
-        $custom_message = "Deposit has been " . $request->status . " find the details below.";
-        sendDepositEmail($custom_subject, $custom_message, $deposit);
-
-        // Record notification
-        $title = "Deposit " . ucfirst($request->status);
-        $body = "Deposit via Nowpayments.io has been " . $request->status;
-        recordNotificationMessage($deposit->user, $title, $body);
-
-        return response()->json([
-            'success' => true,
-            'message' => __('Deposit status updated successfully.')
-        ]);
+            return response()->json([
+                'success' => true,
+                'message' => __('Deposit status updated successfully.')
+            ]);
+        });
     }
 
     public function delete($id)

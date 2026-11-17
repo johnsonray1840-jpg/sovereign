@@ -92,6 +92,13 @@ class DepositController extends Controller
             ], 403);
         }
 
+        if ($gateway->deposits()->exists()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => __('This gateway cannot be deleted because it is linked to existing deposit records. Please disable it instead to retain financial audit history.')
+            ], 422);
+        }
+
         $gateway->delete();
 
         return response()->json([

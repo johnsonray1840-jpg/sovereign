@@ -8,6 +8,7 @@ use App\Models\PaymentMethod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Barryvdh\DomPDF\Facade\Pdf as PDF;
 
 class DepositController extends Controller
@@ -192,16 +193,41 @@ class DepositController extends Controller
     //Start Payment
     public function startNewDeposit(Request $request)
     {
-        $validated = $request->validate([
+        $minDeposit = (float) getSetting('min_deposit', 1);
+        $maxDeposit = (float) getSetting('max_deposit', 100000000);
+
+        $rules = [
             'payment_method_id' => 'required|exists:payment_methods,id',
-            'amount' => 'required|numeric',
+            'amount' => ['required', 'numeric', 'gt:0'],
+        ];
+
+        if ($minDeposit > 0) {
+            $rules['amount'][] = "min:$minDeposit";
+        }
+        if ($maxDeposit > 0) {
+            $rules['amount'][] = "max:$maxDeposit";
+        }
+
+        $validated = $request->validate($rules, [
+            'amount.min' => __("Minimum deposit amount is :amount :currency", ['amount' => $minDeposit, 'currency' => getSetting('currency')]),
+            'amount.max' => __("Maximum deposit amount is :amount :currency", ['amount' => $maxDeposit, 'currency' => getSetting('currency')]),
+            'amount.gt' => __("Deposit amount must be greater than zero"),
         ]);
 
-        $payment_method = PaymentMethod::where('id', $request->payment_method_id)->first();
+        $payment_method = PaymentMethod::where('id', $request->payment_method_id)
+            ->where('status', 'enabled')
+            ->first();
+
+        if (!$payment_method) {
+            return response()->json([
+                'status' => 'error',
+                'message' => __('Selected payment method is currently disabled or unavailable'),
+            ], 422);
+        }
 
         $user_payment_details = [
-            'amount' => $request->amount,
-            'payment_method_id' => $request->payment_method_id
+            'amount' => (float) $request->amount,
+            'payment_method_id' => $payment_method->id
         ];
 
         session()->put('user_payment_details', $user_payment_details);
@@ -300,48 +326,98 @@ class DepositController extends Controller
             ], 422);
         }
 
-        // if payment method type is crypto, require transaction hash and proof, else just hash
+        // Check if updating an existing pending deposit (e.g. from Pay Now)
+        $existing_ref = $user_payment_details['existing_deposit_reference'] ?? $request->input('existing_deposit_reference');
+        $deposit = null;
+        if ($existing_ref) {
+            $deposit = Deposit::where('transaction_reference', $existing_ref)
+                ->where('user_id', auth()->id())
+                ->where('status', 'pending')
+                ->first();
+        }
+
+        // if payment method type is crypto, require transaction hash and proof, else just proof
+        $imageValidationRules = ['image', 'mimes:jpeg,png,jpg,webp,gif', 'max:10240']; // Up to 10MB, support webp & gif
+
         if ($payment_method->type == 'crypto') {
+            $depositId = $deposit ? $deposit->id : null;
+            $hasExistingProof = !empty($deposit?->payment_proof);
+
+            $proofRules = $hasExistingProof
+                ? array_merge(['nullable'], $imageValidationRules)
+                : array_merge(['required'], $imageValidationRules);
+
             $validated = $request->validate([
-                'transaction_hash' => 'required|unique:deposits,transaction_hash|max:255',
-                'proof' => 'required|image|mimes:jpeg,png,jpg|max:5120',
+                'transaction_hash' => [
+                    'required',
+                    'string',
+                    'max:255',
+                    Rule::unique('deposits', 'transaction_hash')
+                        ->where(function ($query) {
+                            return $query->whereIn('status', ['pending', 'completed']);
+                        })
+                        ->ignore($depositId)
+                ],
+                'proof' => $proofRules,
+            ], [
+                'proof.required' => __('Please upload an image of your payment proof / receipt.'),
+                'proof.image' => __('The payment proof must be an image file (JPG, PNG, WEBP, or GIF).'),
+                'proof.mimes' => __('The payment proof must be a file of type: jpeg, png, jpg, webp, gif.'),
+                'proof.max' => __('The payment proof file size may not be greater than 10MB.'),
+                'transaction_hash.required' => __('Please enter your transaction ID or on-chain transaction hash.'),
             ]);
         } else {
+            $hasExistingProof = !empty($deposit?->payment_proof);
+            $proofRules = $hasExistingProof
+                ? array_merge(['nullable'], $imageValidationRules)
+                : array_merge(['required'], $imageValidationRules);
+
             $validated = $request->validate([
-                'proof' => 'required|image|mimes:jpeg,png,jpg|max:5120',
+                'proof' => $proofRules,
+            ], [
+                'proof.required' => __('Please upload an image of your payment proof / receipt.'),
+                'proof.image' => __('The payment proof must be an image file (JPG, PNG, WEBP, or GIF).'),
+                'proof.mimes' => __('The payment proof must be a file of type: jpeg, png, jpg, webp, gif.'),
+                'proof.max' => __('The payment proof file size may not be greater than 10MB.'),
             ]);
         }
 
-
         $proofPath = null;
-        if ($request->hasFile('proof')) {
-            $proofPath = $request->file('proof')->store('deposits', 'public');
+        if ($request->hasFile('proof') && $request->file('proof')->isValid()) {
+            try {
+                $proofPath = $request->file('proof')->store('deposits', 'public');
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('Failed to store deposit payment proof: ' . $e->getMessage());
+                return response()->json([
+                    'status' => 'error',
+                    'message' => __('Unable to save uploaded image. Please check file permissions or try a different file format.'),
+                ], 500);
+            }
         }
 
-        $transaction_reference = Str::orderedUuid();
+        $transaction_reference = $deposit ? $deposit->transaction_reference : (string) Str::orderedUuid();
         $structured_data = null;
 
-        $info = json_decode($payment_method->payment_information, true);
-
+        $info = json_decode($payment_method->payment_information, true) ?? [];
 
         switch ($payment_method->type) {
             case 'crypto':
                 $structured_data = [
                     'transaction_hash' => $request->transaction_hash,
-                    'wallet_address' => $info['wallet_address'],
-                    'currency' => $info['currency'],
-                    'network' => $info['network'],
+                    'wallet_address' => $info['wallet_address'] ?? null,
+                    'currency' => $info['currency'] ?? $user_payment_details['currency'],
+                    'network' => $info['network'] ?? null,
                 ];
                 break;
 
             case 'bank_transfer':
                 $structured_data = [
                     'transaction_hash' => $transaction_reference,
-                    'bank_name' => $info['bank_name'],
-                    'account_holder' => $info['account_holder'],
-                    'account_number' => $info['account_number'],
-                    'routing_number' => $info['routing_number'],
-                    'swift' => $info['swift'],
+                    'bank_name' => $info['bank_name'] ?? null,
+                    'account_holder' => $info['account_holder'] ?? null,
+                    'account_number' => $info['account_number'] ?? null,
+                    'routing_number' => $info['routing_number'] ?? null,
+                    'swift' => $info['swift'] ?? null,
                 ];
                 break;
 
@@ -360,44 +436,53 @@ class DepositController extends Controller
             $structured_data = json_encode($structured_data);
         }
 
+        $expiryHours = (int) getSetting('deposit_expires_at', 24);
+        if ($expiryHours <= 0) {
+            $expiryHours = 24;
+        }
 
+        // store or update deposit in a database transaction
+        DB::transaction(function () use (&$deposit, $user_payment_details, $transaction_reference, $request, $proofPath, $structured_data, $expiryHours) {
+            if (!$deposit) {
+                $deposit = new Deposit();
+                $deposit->user_id = auth()->user()->id;
+                $deposit->transaction_reference = $transaction_reference;
+                $deposit->expires_at = now()->addHours($expiryHours)->timestamp;
+            }
 
-        // store deposit
-        $deposit = new Deposit();
-        $deposit->user_id = auth()->user()->id;
-        $deposit->payment_method_id = $user_payment_details['payment_method_id'];
-        $deposit->amount = $user_payment_details['amount'];
-        $deposit->converted_amount = $user_payment_details['converted_amount'];
-        $deposit->fee_percent = $user_payment_details['fee_percent'];
-        $deposit->fee_amount = $user_payment_details['fee_amount'];
-        $deposit->total_amount = $user_payment_details['total_amount'];
-        $deposit->exchange_rate = $user_payment_details['exchange_rate'];
-        $deposit->transaction_reference = $transaction_reference;
-        $deposit->transaction_hash = $request->transaction_hash ?? $transaction_reference;
-        $deposit->payment_proof = $proofPath;
-        $deposit->expires_at = now()->addHours(getSetting('deposit_expires_in'))->timestamp;
-        $deposit->currency = $user_payment_details['currency'];
-        $deposit->structured_data = $structured_data;
-        $deposit->auto_res_dump = null;
-        $deposit->status = 'pending';
-        $deposit->save();
-
+            $deposit->payment_method_id = $user_payment_details['payment_method_id'];
+            $deposit->amount = $user_payment_details['amount'];
+            $deposit->converted_amount = $user_payment_details['converted_amount'];
+            $deposit->fee_percent = $user_payment_details['fee_percent'];
+            $deposit->fee_amount = $user_payment_details['fee_amount'];
+            $deposit->total_amount = $user_payment_details['total_amount'];
+            $deposit->exchange_rate = $user_payment_details['exchange_rate'];
+            $deposit->transaction_hash = $request->transaction_hash ?? ($deposit->transaction_hash ?? $transaction_reference);
+            if ($proofPath) {
+                $deposit->payment_proof = $proofPath;
+            }
+            $deposit->currency = $user_payment_details['currency'];
+            $deposit->structured_data = $structured_data;
+            $deposit->auto_res_dump = null;
+            $deposit->status = 'pending';
+            $deposit->save();
+        });
 
         // remove user payment details from session
         session()->forget('user_payment_details');
 
         // record notification message
-        $title = "Deposit Initiated"; //to be translated later in blade
+        $title = "Deposit Initiated";
         $body = __("Your deposit of :amount :currency has been initiated. Please complete the payment within :hours hours.", [
             'amount' => $deposit->total_amount,
             'currency' => $deposit->currency,
-            'hours' => getSetting('deposit_expires_in')
+            'hours' => $expiryHours
         ], auth()->user()->lang);
         recordNotificationMessage(auth()->user(), $title, $body);
 
         // send email
-        $custom_subject = "Deposit Initiated"; //to be translated later in blade
-        $custom_message = "We've successfully received your deposit request and it is now being processed."; //to be translated later in blade
+        $custom_subject = "Deposit Initiated";
+        $custom_message = "We've successfully received your deposit request and it is now being processed.";
         sendDepositEmail($custom_subject, $custom_message, $deposit);
 
         return response()->json([
@@ -434,13 +519,6 @@ class DepositController extends Controller
             return redirect()->route('user.deposits.index')->with('error', __('Deposit not found'));
         }
 
-        // only proceed if the payment status is "pending 
-        // if ($deposit->status != 'pending') {
-        //     return redirect()->route('user.deposits.index')->with('error', __('Deposit already processed, Please initiate a new payment to proceed'));
-        // }
-
-        //just handle manual for now
-
         $template = config('site.template');
         $dynamic_name_derived_from_pay = ucfirst($pay);
         $page_title = __("$dynamic_name_derived_from_pay Payment");
@@ -452,9 +530,14 @@ class DepositController extends Controller
             "fee_percent" => $deposit->fee_percent,
             "converted_amount" => $deposit->converted_amount,
             "exchange_rate" => $deposit->exchange_rate,
-            "currency" => $deposit->currency
+            "currency" => $deposit->currency,
+            "expires_at" => $deposit->expires_at,
+            "existing_deposit_reference" => $deposit->transaction_reference,
         ];
         $payment_method = $deposit->paymentMethod;
+
+        // Store back in session so the user can submit payment proof smoothly
+        session()->put('user_payment_details', $user_payment_details);
 
         return view("templates.$template.blades.user.deposits.general", compact(
             'page_title',
@@ -462,7 +545,6 @@ class DepositController extends Controller
             'payment_method',
             'deposit'
         ));
-
 
     }
 

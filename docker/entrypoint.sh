@@ -22,6 +22,7 @@ if [ ! -f /var/www/html/.env ]; then
 fi
 
 # Cache configuration, routes, and views for production performance
+php artisan optimize:clear || true
 php artisan config:cache || true
 php artisan route:cache || true
 php artisan view:cache || true
@@ -31,13 +32,16 @@ php artisan migrate --force || true
 
 # Configure dynamic port for Render (default to 80 if PORT is not set)
 export PORT="${PORT:-80}"
-sed -i "s/\${PORT}/$PORT/g" /etc/nginx/nginx.conf
+sed -i -E "s/listen (\$\{PORT\}|[0-9]+);/listen ${PORT};/g" /etc/nginx/nginx.conf
 
 # Start PHP-FPM in background (logging to stderr so Render logs capture PHP errors)
 php-fpm -D -R
 
 # Start a persistent queue worker in the background for asynchronous jobs
 (while true; do php /var/www/html/artisan queue:work --stop-when-empty --tries=3 --timeout=60 || true; sleep 5; done) &
+
+# Start background scheduler for trading updates, investments, and maintenance
+(while true; do php /var/www/html/artisan schedule:run --no-interaction || true; sleep 60; done) &
 
 # Start Nginx in foreground
 exec nginx -g "daemon off;"

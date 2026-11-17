@@ -1,6 +1,22 @@
 @if (getSetting('preloader', 'enabled') === 'enabled')
+    <script>
+        (function() {
+            if (sessionStorage.getItem('dashboard_loaded')) {
+                document.documentElement.classList.add('no-preloader');
+            }
+        })();
+    </script>
+    <style>
+        .no-preloader #dashboard-preloader {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+    </style>
+
     <div id="dashboard-preloader"
-        class="fixed inset-0 z-[99999] bg-[#0a0a0c] flex items-center justify-center overflow-hidden transition-all duration-700">
+        class="fixed inset-0 z-[99999] bg-[#0a0a0c] flex items-center justify-center overflow-hidden transition-opacity duration-200 ease-out pointer-events-auto">
         <!-- Background Gradient Orbs -->
         <div
             class="absolute top-[-10%] left-[-10%] w-[50vh] h-[50vh] bg-accent-primary/10 rounded-full blur-[120px] animate-blob">
@@ -11,37 +27,37 @@
 
         <div class="relative flex flex-col items-center">
             <!-- Loader Animation -->
-            <div class="relative w-32 h-32 mb-12">
+            <div class="relative w-24 h-24 mb-8">
                 {{-- Outer Ring --}}
-                <div class="absolute inset-0 border-[3px] border-white/5 rounded-full"></div>
+                <div class="absolute inset-0 border-[2px] border-white/5 rounded-full"></div>
                 <div
-                    class="absolute inset-0 border-[3px] border-transparent border-t-accent-primary border-r-accent-primary/50 rounded-full animate-spin-slow shadow-[0_0_30px_rgba(var(--color-accent-primary),0.2)]">
+                    class="absolute inset-0 border-[2px] border-transparent border-t-accent-primary border-r-accent-primary/50 rounded-full animate-spin-slow shadow-[0_0_20px_rgba(var(--color-accent-primary),0.2)]">
                 </div>
 
                 {{-- Inner Ring --}}
-                <div class="absolute inset-6 border-[3px] border-white/5 rounded-full"></div>
+                <div class="absolute inset-4 border-[2px] border-white/5 rounded-full"></div>
                 <div
-                    class="absolute inset-6 border-[3px] border-transparent border-b-purple-500 border-l-purple-500/50 rounded-full animate-spin-reverse shadow-[0_0_30px_rgba(168,85,247,0.2)]">
+                    class="absolute inset-4 border-[2px] border-transparent border-b-purple-500 border-l-purple-500/50 rounded-full animate-spin-reverse shadow-[0_0_20px_rgba(168,85,247,0.2)]">
                 </div>
 
                 {{-- Center Core --}}
                 <div class="absolute inset-0 flex items-center justify-center">
-                    <div class="w-2 h-2 bg-white rounded-full animate-ping"></div>
+                    <div class="w-1.5 h-1.5 bg-white rounded-full animate-ping"></div>
                 </div>
             </div>
 
             <!-- Text & Progress -->
-            <div class="flex flex-col items-center space-y-4 z-10">
-                <h2 class="text-2xl font-bold text-white tracking-[0.2em] uppercase animate-pulse">
+            <div class="flex flex-col items-center space-y-3 z-10">
+                <h2 class="text-xl font-bold text-white tracking-[0.2em] uppercase">
                     {{ getSetting('name') }}
                 </h2>
 
-                <div class="flex items-center gap-3">
-                    <div class="h-[2px] w-12 bg-gradient-to-r from-transparent to-accent-primary animate-pulse"></div>
-                    <p class="text-text-secondary text-[10px] uppercase tracking-[0.3em] font-medium">
-                        {{ __('System Initializing') }}
+                <div class="flex items-center gap-2">
+                    <div class="h-[1.5px] w-8 bg-gradient-to-r from-transparent to-accent-primary animate-pulse"></div>
+                    <p class="text-text-secondary text-[9px] uppercase tracking-[0.25em] font-medium">
+                        {{ __('Loading') }}
                     </p>
-                    <div class="h-[2px] w-12 bg-gradient-to-l from-transparent to-accent-primary animate-pulse"></div>
+                    <div class="h-[1.5px] w-8 bg-gradient-to-l from-transparent to-accent-primary animate-pulse"></div>
                 </div>
             </div>
         </div>
@@ -108,98 +124,44 @@
     </style>
 
     <script>
-        document.addEventListener("DOMContentLoaded", function() {
+        (function() {
             const preloader = document.getElementById('dashboard-preloader');
+            if (!preloader) return;
 
-            // Initial state check - if we just navigated here, it should be visible by default HTML
-
-            // Helper to hide
-            function hidePreloader() {
-                if (preloader && preloader.style.display !== 'none') {
-                    preloader.style.opacity = '0';
-                    preloader.style.transform = 'scale(1.05)';
-                    setTimeout(() => {
-                        preloader.style.display = 'none';
-                    }, 700);
-                }
+            // If already loaded in this session, hide immediately without any flash
+            if (sessionStorage.getItem('dashboard_loaded')) {
+                preloader.style.display = 'none';
+                return;
             }
 
-            // Helper to show
-            function showPreloader() {
-                if (preloader) {
-                    preloader.style.display = 'flex';
-                    // Force reflow
-                    void preloader.offsetWidth;
-
-                    preloader.style.opacity = '1';
-                    preloader.style.transform = 'scale(1)';
-
-                    // Safety timeout
-                    setTimeout(() => {
-                        // If we are still here after 10s, something is wrong or user cancelled
-                        hidePreloader();
-                    }, 10000);
-                }
-            }
-
-            // Initial Page Load
-            window.addEventListener('load', () => {
-                // Delay slightly to show off animation
+            function dismiss() {
+                if (!preloader || preloader.style.display === 'none') return;
+                preloader.style.opacity = '0';
+                preloader.style.pointerEvents = 'none';
                 setTimeout(() => {
-                    hidePreloader();
-                }, 800);
-            });
+                    preloader.style.display = 'none';
+                    try { sessionStorage.setItem('dashboard_loaded', '1'); } catch(e) {}
+                }, 200);
+            }
 
-            // Fallback safety
-            setTimeout(() => {
-                hidePreloader();
-            }, 5000);
+            // Dismiss as soon as DOM is ready or on load (zero artificial delay)
+            if (document.readyState === 'interactive' || document.readyState === 'complete') {
+                dismiss();
+            } else {
+                document.addEventListener('DOMContentLoaded', dismiss, { once: true });
+                window.addEventListener('load', dismiss, { once: true });
+            }
 
-            // Handle Anchor Clicks
-            document.addEventListener('click', function(e) {
-                const anchor = e.target.closest('a');
-
-                if (!anchor || !anchor.href) return;
-
-                // Ignore special protocols
-                if (anchor.protocol === 'javascript:' || anchor.protocol === 'mailto:' || anchor
-                    .protocol === 'tel:') return;
-
-                // Ignore target blank
-                if (anchor.target === '_blank') return;
-
-                // Ignore modifier keys
-                if (e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) return;
-
-                // Check for download attribute
-                if (anchor.hasAttribute('download')) return;
-
-                // Ignore PDF Preview Links
-                if (anchor.classList.contains('pdf-preview-link')) return;
-
-                // Ignore AJAX Pagination
-                if (anchor.closest('.ajax-pagination')) return;
-
-                // Check if same page hash navigation
-                const isSamePage = (anchor.pathname === window.location.pathname) &&
-                    (anchor.search === window.location.search);
-
-                if (isSamePage && anchor.hash) return; // Animated scroll or hash change
-
-                // if the url contains # return
-                if (anchor.href.includes('#')) return;
-
-                // Show preloader
-                showPreloader();
-            });
+            // Fallback safety (max 1.2s instead of 5s)
+            setTimeout(dismiss, 1200);
 
             // Handle Back/Forward Cache
             window.addEventListener('pageshow', function(event) {
                 if (event.persisted) {
-                    hidePreloader();
+                    dismiss();
                 }
             });
-        });
+        })();
     </script>
 
     {{-- Floating Buy/Purchase Button --}}

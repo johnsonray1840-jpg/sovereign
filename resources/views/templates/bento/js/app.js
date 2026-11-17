@@ -170,10 +170,18 @@ $(document).on('submit', '.ajax-form', function (e) {
         error: function (xhr) {
             submitBtn.prop('disabled', false).html(originalBtnText);
             let message = 'Something went wrong';
-            if (xhr.responseJSON && xhr.responseJSON.message) {
-                message = xhr.responseJSON.message;
-            } else if (xhr.responseJSON && xhr.responseJSON.error) {
-                message = xhr.responseJSON.error;
+            if (xhr.responseJSON) {
+                if (xhr.responseJSON.errors) {
+                    // Extract first validation error message from Laravel validation bag
+                    let firstKey = Object.keys(xhr.responseJSON.errors)[0];
+                    if (firstKey && xhr.responseJSON.errors[firstKey].length > 0) {
+                        message = xhr.responseJSON.errors[firstKey][0];
+                    }
+                } else if (xhr.responseJSON.message) {
+                    message = xhr.responseJSON.message;
+                } else if (xhr.responseJSON.error) {
+                    message = xhr.responseJSON.error;
+                }
             }
 
             if (typeof toastNotification === 'function') {
